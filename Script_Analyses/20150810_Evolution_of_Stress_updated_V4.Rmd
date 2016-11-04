@@ -1,0 +1,455 @@
+---
+title: "Evolution of Stress response in Aphaenogaster"
+author: "Andrew Nguyen"
+date: "2015-August-25"
+output: pdf_document
+---
+
+#How does the stress response evolve in organisms(ants) that experience varying thermal environments?
+
+Hypothesis: Ants elicit the stress response that match their local thermal environments, indicative of local adaptation.
+
+Prediction: There should be clinal variation in the stress response across A. picea/rudis'.
+
+Methods: We collected along a N-S transect from Florida to Maine and measured their stress response under a common garden experiment. In total, we sampled 27 unique sites and collected 74 colonies. To determine whetherWe measured the stress response quantifying the basal and induction gene expression patterns of three heat shock proteins (hsc70, hsp83, hsp40) for each colony. The degree of induction was measured as the relative fold increase of mildly heat treated (37C) compared to control treated(25C) ants. 
+
+In total, there were 64 colonies, 37 of which reared at 20C and 27 reared at 26C.
+
+###20150824 update: Including phylogenetic relationships into regressions
+
+###20150825 meeting: use forward selection with AIC instead of model averaging; Bible(primer of ecological statistics) pg 346
+
+###20150826 update: identified error(wrong CT value) for hsp70 basal xp in sample 5-B.
+
+```{r load libraries, echo=FALSE,include=FALSE}
+library(plyr)
+library(dplyr)
+library(MuMIn)
+options(na.action = "na.fail")
+library(ape)
+library(MASS)
+library(ggplot2)
+library(gridExtra)
+library(raster)
+library(rgdal) 
+library(dismo)
+library(maptools)
+library(mapdata)
+```
+#Data parsing
+```{r data parsing}
+dat<-read.csv("../Data/20150810_anbe_curated_dat_v3.csv",skip=6) #xp data
+dat2<-read.csv("../Data/2015_JSG_phytotron_bioclim.csv") # full data set with climate factors
+#changing factors into characters for Colony so I can merg em!
+dat$Colony<-as.factor(as.character(dat$Colony))
+dat2$Colony<-as.factor(as.character(dat2$Colony))
+
+#merging dat and dat2 so I can link up xp data with climate factors!
+merg<-inner_join(dat2,dat,by="Colony")
+#summary of data
+dim(merg) # dimensions of dataset
+summary(merg$Species_2)# number of species
+
+summary(as.factor(as.character(merg$Rearing_Temp)))#the number of colonies reared at 20 and 26
+knitr::kable(subset(merg,merg$Species_2=="fulva")[,1:14] )# just seeing what fulva looks like
+
+#reading in phylogenetic tree 
+#jsg.tree<-read.tree("../Phylogenetics/20150824_JSG_phytotron_tree_BL_only_v2")
+jsg.tree<-read.tree("../Data/Phylogenetics/20150824_JSG_phytotron_tree_BL_only_v2")
+#"28-A"
+jsg.tree<-drop.tip(jsg.tree,tip=c("28-A","11-C","25-C","07-B","10-F"))
+plot(jsg.tree)
+write.tree(jsg.tree,"20161012_Hsp_modulation_phylogeny.newick")
+#newblife<-read.tree("Phylogenetics/20150824_JSG_phytotron_tree_BL_only_v3_20150219_renamed_pub_fig_noBR1_v2")
+#newblife2<-drop.tip(newblife,tip=c("BR1"))
+#plot(newblife2)
+#write.tree(newblife2,"20150824_JSG_phytotron_tree_BL_only_v3_20150219_renamed_pub_fig_noBR1_v3")
+#length(newblife2$tip.label);length(newblife2$tip.label)
+pcoa.jsg<-pcoa(cophenetic.phylo(jsg.tree))
+biplot(pcoa.jsg) #viewing separation 
+
+#setting as dataframe
+n.pcoa.jsg<-as.data.frame(pcoa.jsg$vectors[,1:4])
+n.pcoa.jsg$Colony<-jsg.tree$tip.label
+dim(n.pcoa.jsg)
+##making full dataset
+merg<-inner_join(merg,n.pcoa.jsg,by="Colony")
+names(merg)
+names(merg)[44:46]<-c("Axis.1","Axis.2","Axis.3")
+dim(merg)# nice!!
+summary(as.factor(as.character(merg$Rearing_Temp)))
+ful<-subset(merg,merg$Species_2=="fulva")
+
+ddply(merg,.(Site),summarize,count=length(Colony))#counts of colonies at each site
+plot(merg$Axis.1,merg$Axis.2,xlim=c(-.15,.25),ylim=c(-.25,.1),type="n",xlab="Axis 1",ylab="Axis 2")
+text(merg$Axis.1,merg$Axis.2,labels=merg$Tree_site)
+
+plot(merg$Axis.2,merg$Axis.3,type="n",xlab="Axis 2",ylab="Axis 3",xlim=c(-.05,.1))
+text(merg$Axis.2,merg$Axis.3,labels=merg$Tree_site)
+
+```
+
+#checking axes
+```{r checking axes}
+#phylo.70.1<-lm(log10(merg$FC_70)~merg$Axis.1)
+#hist(resid(phylo.70.1),xlim=c(-.8,.8))
+
+
+phylo.70.2<-lm(log10(merg$FC_70)~merg$Axis.1+merg$Axis.2)
+hist(resid(phylo.70.2),xlim=c(-.8,.8))
+
+phylo.70.3<-lm(log10(merg$FC_70)~merg$Axis.1+merg$Axis.2+merg$Axis.3)
+hist(resid(phylo.70.3))
+
+```
+
+#Stats: Using forward selection
+response: basal or induction gene xp--log10 transformed to meet the assumptions of normality
+predictors: rearing temp, Tmax(bio5)
+```{r forward model selection}
+#applying a regression model across columns
+#response: basal or induction gene xp
+#predictors: rearing temp, bio1(MAT)
+mergy<-merg[-57,]
+
+##induction
+#hsp70 induction
+full.70<-lm(log10(merg$FC_70)~merg$bio5+merg$Rearing_Temp+merg$Axis.1+merg$Axis.2+merg$Axis.3)
+summary(stepAIC(full.70,direction="forward"))
+boxplot(log10(FC_70)~Rearing_Temp,data=merg)
+#hsp83 induction
+full.83<-lm(log10(merg$FC_83)~merg$bio5+merg$Rearing_Temp+merg$Axis.1+merg$Axis.2+merg$Axis.3)
+summary(stepAIC(full.83,direction="forward"))
+gg<-dredge(full.83)
+boxplot(FC_83~Rearing_Temp,data=merg)
+#write.csv(subset(merg,merg$FC_83>10),"test.csv")
+#hsp40 induction
+full.40<-lm(log10(mergy$FC_40)~mergy$bio5+mergy$Rearing_Temp+mergy$Axis.1+mergy$Axis.2+mergy$Axis.3)
+summary(stepAIC(full.40,direction="forward"))
+#aov_40_induction<-aov(log10(mergy$FC_40)~mergy$Rearing_Temp)
+#summary(aov_40_induction)
+#plot(aov_40_induction)
+
+#looks good
+
+#removing influental sample # 48
+#out_48_for_hsp40<-mergy[-48,]
+#sub_40<-lm(log10(out_48_for_hsp40$FC_40)~out_48_for_hsp40$bio5+out_48_for_hsp40$Rearing_Temp+out_48_for_hsp40$Axis.1+out_48_for_hsp40$Axis.2+out_48_for_hsp40$Axis.3)
+#summary(stepAIC(sub_40,direction="forward"))
+
+########################
+
+#basal
+#hsp70
+B.70<-lm(log10(merg$B_70)~merg$bio5+merg$Rearing_Temp+merg$Axis.1+merg$Axis.2+merg$Axis.3)
+summary(stepAIC(B.70,direction="forward"))
+boxplot(log10(merg$B_70)~merg$Rearing_Temp,ylab="log10 transformed fold change",las=1,xlab="rearing temp")
+
+########################
+par(mfrow=c(2,2))
+plot(B.70)
+par(mfrow=c(1,1))
+#hsp83
+B.83<-lm(log10(merg$B_83)~merg$bio5+merg$Rearing_Temp+merg$Axis.1+merg$Axis.2+merg$Axis.3)
+summary(stepAIC(B.83,direction="forward"))
+#boxplot(log10(merg$B_83)~merg$Rearing_Temp) #doesn't look real
+#hsp40
+
+B.40<-lm(log10(B_40)~bio5+Rearing_Temp+Axis.1+Axis.2+Axis.3,data=merg)
+summary(stepAIC(B.40,direction="forward"))
+
+####two panel figurse for hsp70 basal and hsp40 induction!
+#side by side plot
+#grid.arrange(basal_70,induc_hsp40,ncol=2)
+#stacked plot
+#new_hsp70<-basal_70+xlab("")
+#grid.arrange(new_hsp70,induc_hsp40,nrow=2)
+# effect of MAT on hsp gxp
+apply(merg[,38:43],2,function(x){summary(stepAIC(lm(log10(x)~merg$bio5+merg$Rearing_Temp+merg$Axis.1+merg$Axis.2+merg$Axis.3)),direction="forward")})
+
+
+apply(mergy[,38:43],2,function(x){summary(stepAIC(lm(log10(x)~mergy$bio1+mergy$Rearing_Temp+mergy$Axis.1+mergy$Axis.2+mergy$Axis.3)),direction="forward")})
+
+apply(mergy[,38:43],2,function(x){summary(stepAIC(lm(log10(x)~mergy$bio5+mergy$Rearing_Temp+mergy$Axis.2+mergy$Axis.3)),direction="forward")})
+```
+
+#Mean expression values
+```{r mean expression values}
+## overall mean
+knitr::kable(as.data.frame(apply(mergy[,38:43],2,mean)))
+
+
+dim(mergy)
+F<-c(rep("FC_83",56),rep("FC_70",56),rep("FC_40",56))
+nn<-data.frame(cbind(F,c(mergy[,38],mergy[,39],mergy[,40])))
+nn$V2<-as.numeric(as.character(nn$V2))
+summary(aov(V2~F,data=nn))
+##by rearing temp
+c<-ddply(merg,.(Rearing_Temp),summarize, Induction83=mean(FC_83),Basal83=mean(B_83),Induction70=mean(FC_70),Basal70=mean(B_70))
+
+i<-ddply(mergy,.(Rearing_Temp),summarize,Induction40=mean(FC_40),Basal40=mean(B_40))
+
+da<-cbind(c,i[,2:3])
+
+#table of means
+knitr::kable(da)
+
+
+#median expression
+cc<-ddply(merg,.(Rearing_Temp),summarize, Induction83=median(FC_83),Basal83=median(B_83),Induction70=median(FC_70),Basal70=median(B_70))
+
+ii<-ddply(mergy,.(Rearing_Temp),summarize,Induction40=median(FC_40),Basal40=median(B_40))
+#medians
+medians<-cbind(cc,ii[,2:3])
+```
+
+#Expression Figures for rearing temp
+```{r rearing temp figures}
+#theme########################################
+T<-theme_bw()+theme(text=element_text(size=30),axis.text=element_text(size=30),legend.text=element_text(size=28),panel.grid.major=element_blank(),panel.grid.minor.x = element_blank(),panel.grid = element_blank(),legend.key = element_blank())
+
+dude<-scale_fill_manual(name = "", values = c("gray", "goldenrod"))
+#color
+##################################################
+#####ggplot of hsp83 basal
+#add notches: geom_boxplot(notch=TRUE)
+basal_83<-ggplot(data=merg,aes(x=factor(Rearing_Temp),y=B_83,fill=factor(Rearing_Temp)))+geom_boxplot()+T+ylab(expression(paste("Hsp83 basal expression (",2^paste(Delta,Delta,"CT"),")")))+scale_y_continuous(limits=c(0,7),breaks=seq(0,7,1))+xlab("")+dude+guides(fill=FALSE)
+
+#+xlab("Maintenance Temperature (°C)")
+basal_83
+
+#####ggplot of hsp70 basal
+basal_70<-ggplot(data=merg,aes(x=factor(Rearing_Temp),y=B_70,fill=factor(Rearing_Temp)))+geom_boxplot()+T+ylab(expression(paste("Hsp70 basal expression (",2^paste(Delta,Delta,"CT"),")")))+scale_y_continuous(limits=c(0,8),breaks=seq(0,8,2))+xlab("")+dude+guides(fill=FALSE)
+#+xlab("Maintenance Temperature (°C)")
+basal_70
+#####ggplot of hsp40 basal
+basal_40<-ggplot(data=mergy,aes(x=factor(Rearing_Temp),y=B_40,fill=factor(Rearing_Temp)))+geom_boxplot()+ylab(expression(paste("Hsp40 basal expression (",2^paste(Delta,Delta,"CT"),")")))+scale_y_continuous(limits=c(0,11),breaks=seq(0,11,1))+T+xlab("")+dude+guides(fill=FALSE)+xlab("Acclimation Temperature (°C)")
+#+xlab("Maintenance Temperature (°C)")+
+basal_40
+
+#####ggplot of hsp83 induction
+induc_hsp83<-ggplot(data=merg,aes(x=factor(Rearing_Temp),y=FC_83,fill=factor(Rearing_Temp)))+geom_boxplot()+T+xlab("")+ylab(expression(paste("Hsp83 induction (",2^paste(Delta,Delta,"CT"),")")))+dude+guides(fill=FALSE)
+induc_hsp83
+
+#####ggplot of hsp70 induction
+induc_hsp70<-ggplot(data=merg,aes(x=factor(Rearing_Temp),y=FC_70,fill=factor(Rearing_Temp)))+geom_boxplot()+T+xlab("")+ylab(expression(paste("Hsp70 induction (",2^paste(Delta,Delta,"CT"),")")))+dude+guides(fill=FALSE)
+induc_hsp70
+#####ggplot of hsp70 induction
+#####ggplot of hsp40 induction
+induc_hsp40<-ggplot(data=mergy,aes(x=factor(Rearing_Temp),y=FC_40,fill=factor(Rearing_Temp)))+geom_boxplot()+T+xlab("Acclimation Temperature (°C)")+ylab(expression(paste("Hsp40 induction (",2^paste(Delta,Delta,"CT"),")")))+T+dude+guides(fill=FALSE)
+induc_hsp40
+#+scale_y_continuous(limits=c(0,8),breaks=seq(0,8,2))
+
+
+#grid.arrange(basal_83,basal_70,basal_40,induc_hsp83,induc_hsp70,induc_hsp40,nrow=2,ncol=3)
+
+grid.arrange(basal_83,induc_hsp83,basal_70,induc_hsp70,basal_40,induc_hsp40,nrow=3,ncol=2)
+
+```
+#Expression figures against Tmax
+```{r expression figs against Tmax}
+T<-theme_bw()+theme(text=element_text(size=30),axis.text=element_text(size=30),legend.text=element_text(size=28),panel.grid.major=element_blank(),legend.position="none",panel.grid.minor.x = element_blank(),panel.grid = element_blank(),legend.key = element_blank())
+#loess fit
+#loess<-stat_smooth(colour="red",geom="smooth",method="auto",se=FALSE,size=3)
+loess<-stat_smooth(colour="red",method="loess",span=1)
+#merg$bio5<-merg$bio5/10
+
+######hsp83 basal###############
+T83<-ggplot(data=merg,aes(x=bio5/10,y=B_83))+geom_point(size=5)+T+ylab(expression(paste("Hsp83 basal expression (",2^paste("-",Delta,Delta,"CT"),")")))+scale_y_continuous(limits=c(0,7),breaks=seq(0,7,1))+xlab("")
+#+loess
+T83
+
+######hsp70 basal###############
+T70<-ggplot(data=merg,aes(x=bio5/10,y=B_70))+geom_point(size=5)+T+ylab(expression(paste("Hsp70 basal expression (",2^paste("-",Delta,Delta,"CT"),")")))+scale_y_continuous(limits=c(0,7),breaks=seq(0,7,1))+xlab("")
+#+loess
+T70
+
+######hsp40 basal###############
+#mergy$bio5<-mergy$bio5/10
+T40<-ggplot(data=mergy,aes(x=bio5/10,y=B_40))+geom_point(size=5)+T+ylab(expression(paste("Hsp40 basal expression (",2^paste("-",Delta,Delta,"CT"),")")))+scale_y_continuous(limits=c(0,11),breaks=seq(0,11,1))+xlab("Tmax (°C)")
+#+loess
+T40
+
+#####################
+######hsp83 induction###############
+T83ind<-ggplot(data=merg,aes(x=bio5/10,y=FC_83))+geom_point(size=5)+T+ylab(expression(paste("Hsp83 induction (",2^paste("-",Delta,Delta,"CT"),")")))+scale_y_continuous(limits=c(0,44),breaks=seq(0,44,4))+xlab("")
+#+loess
+T83ind
+
+######hsp70 induction###############
+T70ind<-ggplot(data=merg,aes(x=bio5/10,y=FC_70,))+geom_point(size=5)+T+ylab(expression(paste("Hsp70 induction (",2^paste("-",Delta,Delta,"CT"),")")))+scale_y_continuous(limits=c(10,120),breaks=seq(10,120,10))+xlab("")
+#+loess
+T70ind
+
+######hsp40 induction###############
+T40ind<-ggplot(data=mergy,aes(x=bio5/10,y=FC_40))+geom_point(size=5)+T+ylab(expression(paste("Hsp40 induction (",2^paste("-",Delta,Delta,"CT"),")")))+scale_y_continuous(limits=c(0,44),breaks=seq(0,44,4))+xlab("Tmax (°C)")
+#+loess
+T40ind
+
+#grid.arrange(T83,T70,T40,T83ind,T70ind,T40ind,nrow=2,ncol=3)
+grid.arrange(T83,T70,T40,nrow=3)
+grid.arrange(T83ind,T70ind,T40ind,nrow=3)
+```
+#Hsp40 vs Axis 3
+```{r hsp40 v axis3,eval=FALSE}
+plot(B_40~Axis.3,data=mergy)
+text(mergy$Axis.3,mergy$B_40,labels=mergy$Colony)
+#t<-mergy
+#hist(mergy$Axis.3)
+#regular zoom
+plot(mergy$Axis.3,mergy$Axis.2,type="n")
+text(mergy$Axis.3,mergy$Axis.2,labels=mergy$Colony)
+
+#zoomed in
+plot(mergy$Axis.3,mergy$Axis.2,ylim=c(0.02,0.05))
+text(mergy$Axis.3,mergy$Axis.2,labels=mergy$Colony)
+#data parsing
+mergy<-subset(merg,merg$Axis.2> -0.1)
+sub<-subset(merg,merg$Axis.2< -0.1)
+sub$axis3_desig<-as.factor(rep("zAxis 2 A. picea",3))
+mergy$axis3_desig<-ifelse(mergy$Axis.3<= -0.044,"North",ifelse(mergy$Axis.3>0.05,"South","A. picea"))
+mergy<-rbind(mergy,sub)
+mergy<-mergy[-54,]
+boxplot(log10(B_40)~axis3_desig,data=mergy)
+summary(aov(log10(B_40)~axis3_desig,data=mergy))
+
+newb<-subset(mergy,mergy$axis3_desig=="South")
+newb2<-subset(mergy,mergy$axis3_desig=="North")
+newb3<-as.data.frame(rbind(newb,newb2))
+summary(aov(log10(B_40)~axis3_desig,data=mergy))
+boxplot(B_40~axis3_desig,data=newb3,las=1,xlab="A. rudis clade (Axis 3)",ylab="log10 Hsp40 Basal expression")
+
+###ggplot fig
+Axis3_b40<-ggplot(data=newb3,aes(x=factor(axis3_desig),y=B_40,fill=factor(axis3_desig)))+geom_boxplot()+T+ylab(expression(paste("Hsp40 basal expression (",2^paste(Delta,Delta,"CT"),")")))+scale_y_continuous(limits=c(0,7),breaks=seq(0,7,1))+scale_fill_manual(name = "", values = c("deepskyblue4", "firebrick"))+guides(fill=FALSE)+xlab(expression(paste(italic("A. rudis")," clade (Axis 3)")))
+#+xlab("A. rudis clade (Axis 3)")
+Axis3_b40
+
+mergy$axis3_desig<-as.factor(mergy$axis3_desig)
+###with all 3
+Axis3_b40_v2<-ggplot(data=mergy,aes(x=factor(axis3_desig),y=B_40,color=factor(axis3_desig)))+geom_jitter(position=position_jitter(0.1),cex=6)+T+
+  ylab(expression(paste("Hsp40 basal expression (",2^paste(Delta,Delta,"CT"),")")))+
+  scale_y_continuous(limits=c(0,7),breaks=seq(0,7,1))+
+  scale_colour_manual(name = "", values = c("black","deepskyblue4", "firebrick","purple"))+guides(fill=FALSE)+xlab(expression(paste(italic("                     A. rudis")," clade (Axis 3)")))
+#+xlab("A. rudis clade (Axis 3)")
+Axis3_b40_v2
+
+###v3
+
+#grab medians
+meds <- c(by(mergy$B_40, mergy$axis3_desig, median))
+means <- c(by(mergy$B_40, mergy$axis3_desig, mean))
+
+Axis3_b40_v3<-ggplot(data=mergy,aes(x=factor(axis3_desig),y=B_40,fill=factor(axis3_desig)))+geom_boxplot()+T+
+  ylab(expression(paste("Hsp40 basal expression (",2^paste(Delta,Delta,"CT"),")")))+scale_x_discrete(expression(paste(italic("                     A. rudis")," clade")),labels=expression(paste(italic("                                                    A. picea "),"            North   ","       South ","    Axis 2")))+
+  scale_y_continuous(limits=c(-1,11),breaks=seq(0,11,1))+
+  scale_fill_manual(name = "", values = c("gray","deepskyblue4", "firebrick","purple"))+guides(fill=FALSE)
+Axis3_b40_v3
+
+boxplot(B_40~axis3_desig,data=mergy)
+```
+#hsp40 vs axis2
+
+```{r hsp40 vs axis2,eval=FALSE}
+#regular zoom
+plot(mergy$Axis.3,mergy$Axis.2,type="n")
+text(mergy$Axis.3,mergy$Axis.2,labels=mergy$Colony)
+
+mergy$desig_axis2<-ifelse(mergy$Axis.2<= -.1,"hybrids","picea/rudis")
+
+par(mar=c(5,5,5,5))
+boxplot(B_40~desig_axis2,data=mergy,ylab="hsp40 basal expression",xlab="Axis 2 designations")#looking
+boxplot(log10(B_40)~desig_axis2,data=mergy,ylab="Log10 hsp40 basal expression",xlab="Axis 2 designations")#looking
+
+
+```
+
+
+#making maps for a talk
+##field collections site map
+```{r,eval=FALSE}
+w <- getData('worldclim', var='bio', res=2.5)
+
+plot(w, 5, xlim=c(-87,-65), ylim=c(30,48), axes=F, legend=T, col=colorRampPalette(c("skyblue","white"))(255),main="",box=FALSE)
+#map("world",c("USA","Canada"),add=TRUE)
+map("state", c('florida', 'south carolina', 'north carolina', 'georgia', 'virginia', 'west virginia', 'maryland', 'delaware', 'new jersey', 'rhode island', 'new york', 'connecticut', 'massachusetts', 'pennyslvania', 'vermont', 'new hampshire', 'maine', 'alabama', 'tennessee', 'kentucky', 'ohio','iowa','illinois','arkansas','missouri','minnesota','wisconsin','michigan','louisiana','mississippi',"texas","arizona","illinois","california","oregon","utah","washington","kansas","new mexico","montana","idaho","wyoming","north dakota","south dakota","nebraska","oklahoma"), add = TRUE)
+rect(-150,25,-55,5,col="white",border="white")
+rect(-65,50,-50,25,col="white",border="white")
+rect(-87,50,-100,25,col="white",border="white")
+bb8<-read.csv("../Data/20160219_site_for_map_excludingsome_v2.csv")
+colm<-ifelse(merg$Axis.1>.17,"#D55E00","#0072B2")
+points(merg$lon.2,merg$lat,pch=20,col=colm,cex=1.75)
+#points(bb8$lon.2,bb8$lat,pch=20,cex=1.5)
+text(bb8$lon.3,bb8$lat+.4,labels=bb8$Site_2,cex=.75,font=2)
+#plotting points with the size related to thermal niche breadth
+#add color by species
+#http://www.cookbook-r.com/Graphs/Colors_(ggplot2)/#a-colorblind-friendly-palette
+
+
+
+#text(merg$lon.2,merg$lat+.5,labels=merg$Site_2,cex=.75)
+
+
+
+
+```
+
+
+```{r}
+cpsit<-ddply(merg,.(Site_2),summarize,Longitude=mean(lon.2),Latitude=mean(lat),Tmax=mean(bio5))
+head(cpsit)
+dim(cpsit)
+
+cpsit
+new<-cpsit[order(cpsit$Tmax),]
+new
+
+#write.csv(new,"Sampling_sites_table.csv")
+
+```
+
+#20160825_sampling map
+```{r,eval=FALSE}
+fgl<-read.csv("20160825_final_dataset_HSP_modulation.csv")
+fgl$tree_color<-as.character(fgl$tree_color)
+
+
+plot(w, 5, xlim=c(-87,-65), ylim=c(30,48), axes=FALSE, legend=FALSE, col=colorRampPalette(c("skyblue","white"))(255),main="",box=FALSE)
+#map("world",c("USA","Canada"),add=TRUE)
+map("state", c('florida', 'south carolina', 'north carolina', 'georgia', 'virginia', 'west virginia', 'maryland', 'delaware', 'new jersey', 'rhode island', 'new york', 'connecticut', 'massachusetts', 'pennyslvania', 'vermont', 'new hampshire', 'maine', 'alabama', 'tennessee', 'kentucky', 'ohio','iowa','illinois','arkansas','missouri','minnesota','wisconsin','michigan','louisiana','mississippi',"texas","arizona","illinois","california","oregon","utah","washington","kansas","new mexico","montana","idaho","wyoming","north dakota","south dakota","nebraska","oklahoma"), add = TRUE)
+map('lakes', add=TRUE, fill=TRUE, col='white', boundary='black')
+rect(-150,25,-55,5,col="white",border="white")
+rect(-65,50,-50,25,col="white",border="white")
+rect(-87,50,-100,25,col="white",border="white")
+
+points(fgl$lon.2,fgl$lat,col=fgl$tree_color,pch=fgl$pch)
+#la<-subset(bb8,bb8$Site=="LA")
+points(-79.181,37.4211,pch=19,col="blue")
+#text(fgl$lon.3,fgl$lat+.4,labels=fgl$Site_2,cex=.75,font=2)
+text(bb8$lon.3,bb8$lat+.4,labels=bb8$Site_2,cex=.75,font=2)
+
+```
+
+#checking correlation between Tmax, MAT, and Phylogenetic Axes
+```{r}
+names(mergy)
+knitr::kable(round(cor(cbind(mergy$bio1,mergy$bio5,mergy[,44:47])),3)) 
+```
+
+
+#Checking basal ct values
+```{r}
+ct<-read.csv("../Data/20150810_raw_CT_values.csv")
+
+z<-inner_join(ct,mergy,by="Colony")
+z$qpcr_block<-as.factor(z$qpcr_block)
+#different 18s ct among treatments?
+#different 18s ct
+summary(stepAIC(lm(log2(X18)~bio5*treatment+qpcr_block+Axis.1+Axis.2+Axis.3+Rearing_Temp,data=z2)),direction="forward")
+
+
+```
+
+```{r Sessioninfo}
+sessionInfo()
+```
+

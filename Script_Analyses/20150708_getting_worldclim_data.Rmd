@@ -1,0 +1,90 @@
+---
+title: "getting environmental data"
+author: "Andrew Nguyen"
+date: "2015-July-08"
+output: pdf_document
+---
+libraries
+```{r load libraries,echo=FALSE,include=FALSE}
+library(lattice)
+library(permute)
+library(vegan)
+library(MASS)
+library(sp)
+library(raster)
+library(rgdal) 
+library(dismo)
+library(maptools)
+library(foreign)
+library(grid)
+library(lattice)
+library(maps)
+library(ape)
+#library(leaps)
+library(QuantPsyc)
+library(ggplot2)
+library(MuMIn)
+library(plyr)
+library(dplyr)
+options(na.action = "na.fail")
+```
+
+BIO1 = Annual Mean Temperature
+BIO2 = Mean Diurnal Range (Mean of monthly (max temp - min temp))
+BIO3 = Isothermality (BIO2/BIO7) (* 100)
+BIO4 = Temperature Seasonality (standard deviation *100)
+BIO5 = Max Temperature of Warmest Month
+BIO6 = Min Temperature of Coldest Month
+BIO7 = Temperature Annual Range (BIO5-BIO6)
+BIO8 = Mean Temperature of Wettest Quarter
+BIO9 = Mean Temperature of Driest Quarter
+BIO10 = Mean Temperature of Warmest Quarter
+BIO11 = Mean Temperature of Coldest Quarter
+BIO12 = Annual Precipitation
+BIO13 = Precipitation of Wettest Month
+BIO14 = Precipitation of Driest Month
+BIO15 = Precipitation Seasonality (Coefficient of Variation)
+BIO16 = Precipitation of Wettest Quarter
+BIO17 = Precipitation of Driest Quarter
+BIO18 = Precipitation of Warmest Quarter
+BIO19 = Precipitation of Coldest Quarter
+```{r}
+merg<-read.csv("../Data/2015_id_colony_species_rearingtemp.csv")
+w <- getData('worldclim', var='bio', res=2.5)
+dbio1 <- extract(w, merg[,c("lon.2","lat")])
+
+env<-princomp(dbio1[,1:6])
+summary(env)
+loadings(env)
+
+R<-as.data.frame(cbind(merg,dbio1))
+write.csv(R,"2015_JSG_phytotron_bioclim.csv")
+```
+
+
+### Gettign elevational data
+```{r}
+ss<-read.csv("Sampling_sites_table.csv")
+
+
+#http://stackoverflow.com/questions/21593868/extracting-elevation-from-website-for-lat-lon-points-in-australia-using-r
+
+googEl <- function(locs)  {
+  require(RJSONIO)
+  locstring <- paste(do.call(paste, list(locs[, 2], locs[, 1], sep=',')),
+                     collapse='|')
+  u <- sprintf('http://maps.googleapis.com/maps/api/elevation/json?locations=%s&sensor=false',
+               locstring)
+  res <- fromJSON(u)
+  out <- t(sapply(res[[1]], function(x) {
+    c(x[['location']]['lat'], x[['location']]['lng'], 
+      x['elevation'], x['resolution']) 
+  }))    
+  rownames(out) <- rownames(locs)
+  return(out)
+}
+
+a<-t(as.data.frame(googEl(ss[,c("Longitude","Latitude")])[,3]))
+ng<-data.frame(cbind(ss,a))
+write.csv(ng,"20161026_samplingdata_with_elevation.csv")
+```
