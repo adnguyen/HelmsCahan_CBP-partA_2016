@@ -1,6 +1,6 @@
 # Modulation of Hsp gene expression in two species of common woodland ants (*Aphaenogaster picea* and *A. rudis*)
 
-<img data-toggle="modal" data-target="[data-modal='10.5281/zenodo.164922']" src="/badge/DOI/10.5281/zenodo.164922.svg" alt="10.5281/zenodo.164922">
+
 
 ### Repository Layout:   
 
